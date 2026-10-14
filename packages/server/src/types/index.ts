@@ -169,6 +169,12 @@ export interface Environment {
      */
     MX_CHECK?: string;
     /**
+     * On by default: a message whose `From` claims to be the recipient's own
+     * domain but arrived from a different envelope domain is treated as a
+     * self-spoof and blocked. Set explicitly to `false` or `0` to turn it off.
+     */
+    SENDER_MATCH_CHECK?: string;
+    /**
      * Optional password for opening the inbox in a plain browser outside
      * Telegram. Empty or absent restricts access to the Telegram Mini App.
      */

@@ -7,7 +7,14 @@ import type { AttachmentRecord, EmailRecord, Environment, ParsedEmailResult, Run
 import { Dao } from '../db';
 import { warnIfSchemaOutdated } from '../db/schema';
 import { loadDiscoveredDomain, loadSettings } from '../db/settings';
-import { hydrateEmail, isMessageBlock, isSenderMxBlocked, parseEmail, renderEmailListMode } from '../mail';
+import {
+    hydrateEmail,
+    isMessageBlock,
+    isSenderMismatchBlocked,
+    isSenderMxBlocked,
+    parseEmail,
+    renderEmailListMode,
+} from '../mail';
 import { createTelegramBotAPI } from '../telegram';
 
 const BODY_INLINE_LIMIT = 900 * 1024;
@@ -286,12 +293,22 @@ export async function emailHandler(
     // message whose domain resolves to no MX record, independent of the
     // address lists. `MX_CHECK=false` or `0` turns it off.
     const isMxBlocked = await isSenderMxBlocked(message.from, env);
-    const blocked = isBlock || isMxBlocked;
+    // The sender-match check is on by default and blocks a message whose `From`
+    // claims to be the recipient's own domain while the envelope sender came
+    // from a different domain — the self-spoof that "new login" phishing uses.
+    // `SENDER_MATCH_CHECK=false` or `0` turns it off.
+    const isSenderMismatch = isSenderMismatchBlocked(message, env);
+    const blocked = isBlock || isMxBlocked || isSenderMismatch;
 
     // Reject the email. Done before identity resolution so a rejected message
     // without a `Message-ID` is not fully buffered just to be thrown away.
     if (blocked && settings.blockPolicy.includes('reject')) {
-        message.setReject(isMxBlocked && !isBlock ? 'No MX record for sender' : 'Blocked');
+        const reason = isBlock
+            ? 'Blocked'
+            : isMxBlocked
+              ? 'No MX record for sender'
+              : 'Sender domain mismatch';
+        message.setReject(reason);
         return;
     }
 
