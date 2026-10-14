@@ -72,6 +72,9 @@ export function testEnv(overrides: Partial<Environment> = {}): Environment {
         BLOCK_LIST: '',
         WHITE_LIST: '',
         BLOCK_POLICY: 'reject',
+        // Off by default so existing deliveries never issue an MX lookup; the
+        // MX tests opt in explicitly.
+        MX_CHECK: 'false',
         DB: bindings.DB,
         BUCKET: bindings.BUCKET,
         ...overrides,

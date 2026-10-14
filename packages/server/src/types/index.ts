@@ -164,6 +164,11 @@ export interface Environment {
     RESEND_API_KEY?: string;
     DEBUG?: string;
     /**
+     * On by default: a sender domain that resolves to no MX record is rejected
+     * before storage. Set explicitly to `false` or `0` to turn the check off.
+     */
+    MX_CHECK?: string;
+    /**
      * Optional password for opening the inbox in a plain browser outside
      * Telegram. Empty or absent restricts access to the Telegram Mini App.
      */

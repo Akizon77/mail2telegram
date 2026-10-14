@@ -7,7 +7,7 @@ import type { AttachmentRecord, EmailRecord, Environment, ParsedEmailResult, Run
 import { Dao } from '../db';
 import { warnIfSchemaOutdated } from '../db/schema';
 import { loadDiscoveredDomain, loadSettings } from '../db/settings';
-import { hydrateEmail, isMessageBlock, parseEmail, renderEmailListMode } from '../mail';
+import { hydrateEmail, isMessageBlock, isSenderMxBlocked, parseEmail, renderEmailListMode } from '../mail';
 import { createTelegramBotAPI } from '../telegram';
 
 const BODY_INLINE_LIMIT = 900 * 1024;
@@ -282,11 +282,16 @@ export async function emailHandler(
     await warnIfSchemaOutdated(env.DB);
     const settings = await loadSettings(env);
     const isBlock = await isMessageBlock(message, env);
+    // The MX check is on by default and queries the sender domain, blocking a
+    // message whose domain resolves to no MX record, independent of the
+    // address lists. `MX_CHECK=false` or `0` turns it off.
+    const isMxBlocked = await isSenderMxBlocked(message.from, env);
+    const blocked = isBlock || isMxBlocked;
 
     // Reject the email. Done before identity resolution so a rejected message
     // without a `Message-ID` is not fully buffered just to be thrown away.
-    if (isBlock && settings.blockPolicy.includes('reject')) {
-        message.setReject('Blocked');
+    if (blocked && settings.blockPolicy.includes('reject')) {
+        message.setReject(isMxBlocked && !isBlock ? 'No MX record for sender' : 'Blocked');
         return;
     }
 
@@ -304,7 +309,7 @@ export async function emailHandler(
     const storedFlag = status.stored === 1;
 
     // Forward to email; one bad address only skips itself.
-    const blockForward = isBlock && settings.blockPolicy.includes('forward');
+    const blockForward = blocked && settings.blockPolicy.includes('forward');
     const forwardList = blockForward || !settings.forwardEnabled ? [] : settings.forwardList;
     for (const forward of forwardList) {
         const address = forward.trim();
@@ -328,9 +333,9 @@ export async function emailHandler(
     // and the `stored` write re-parses once and then finds the row by identity, so
     // nothing is duplicated; a crash between `stored` and the notification drops
     // that one push (at-most-once for the push, at-least-once for the stored mail).
-    const blockTelegram = isBlock && settings.blockPolicy.includes('telegram');
+    const blockTelegram = blocked && settings.blockPolicy.includes('telegram');
     if (!storedFlag || !status.telegram) {
-        const folder = isBlock ? 'spam' : 'inbox';
+        const folder = blocked ? 'spam' : 'inbox';
         let stored: EmailRecord;
         // Reuse the row a previous attempt persisted. If it is gone (purged mail,
         // or a cleanup that removed the row but not its journal entry) fall through
